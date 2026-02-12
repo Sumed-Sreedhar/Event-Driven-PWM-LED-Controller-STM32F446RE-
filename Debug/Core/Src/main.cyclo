@@ -1,0 +1,12 @@
+../Core/Src/main.c:93:5:main	3
+../Core/Src/main.c:151:6:SystemClock_Config	3
+../Core/Src/main.c:199:13:MX_TIM2_Init	4
+../Core/Src/main.c:244:13:MX_USART2_UART_Init	2
+../Core/Src/main.c:277:13:MX_GPIO_Init	1
+../Core/Src/main.c:317:6:change_button_mode	6
+../Core/Src/main.c:356:6:update_status_led	8
+../Core/Src/main.c:397:6:status_double_blink	6
+../Core/Src/main.c:436:6:Toggle_Status_Led	2
+../Core/Src/main.c:448:6:HAL_GPIO_EXTI_Callback	3
+../Core/Src/main.c:460:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/main.c:473:6:Error_Handler	1
