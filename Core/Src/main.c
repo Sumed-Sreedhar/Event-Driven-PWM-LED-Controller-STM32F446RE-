@@ -47,7 +47,7 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-/*volatile uint8_t mode_button_flag=0;
+volatile uint8_t mode_button_flag=0;
 
 typedef enum{
 	INIT=0,
@@ -64,13 +64,18 @@ typedef enum{
 }blink_state;
 
 volatile blink_state blink_mode = PAUSE;
-volatile button_state mode_button_state = IDLE;
+volatile button_state mode_button_state = INIT;
 static uint8_t status_led_state=0;
 volatile uint32_t system_tick=0;
 static uint16_t toggleCounter=0;
 static uint32_t state_entry_time=0;
 static uint32_t last_button_press=0;
-static uint32_t status_led_last_toggle_time=0;*/
+static uint32_t last_fault_button_press=0;
+static uint32_t last_clear_button_press=0;
+static uint32_t status_led_last_toggle_time=0;
+static uint16_t brightness=0;
+volatile uint8_t fault_flag=0;
+volatile uint8_t clear_fault_flag=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -122,11 +127,9 @@ int main(void)
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 500);
- /* HAL_TIM_Base_Start_IT(&htim2);
-  mode_button_state = INIT;
+  HAL_TIM_Base_Start_IT(&htim2);
   state_entry_time = system_tick;
-  HAL_GPIO_WritePin(STATUS_LED_GPIO_Port,STATUS_LED_Pin,GPIO_PIN_SET);*/
+  HAL_GPIO_WritePin(STATUS_LED_GPIO_Port,STATUS_LED_Pin,GPIO_PIN_SET);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -136,17 +139,29 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	/*  if(mode_button_state==INIT && system_tick-state_entry_time>=500)
+	  if(mode_button_state==INIT && system_tick-state_entry_time>=500)
 	  {
 		  HAL_GPIO_WritePin(STATUS_LED_GPIO_Port,STATUS_LED_Pin,GPIO_PIN_RESET);
 		  mode_button_state = IDLE;
 		  state_entry_time = system_tick;
 	  }
+	  if(fault_flag)
+	  {
+		  mode_button_state = FAULT;
+		  fault_flag=0;
+	  }
+	  if(clear_fault_flag == 1 && mode_button_state == FAULT)
+	  {
+		  clear_fault_flag = 0;
+		  mode_button_state = IDLE;
+	  }
 
+	  update_fault_led();
 	  change_button_mode();
-	  update_status_led();*/
-  }
+	  update_PWM_led();
+	  update_status_led();
   /* USER CODE END 3 */
+  }
 }
 
 /**
@@ -354,6 +369,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : MODE_STATUS_BUTTON_Pin */
   GPIO_InitStruct.Pin = MODE_STATUS_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -367,7 +385,29 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(STATUS_LED_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : CLEAR_FAULT_BUTTON_Pin */
+  GPIO_InitStruct.Pin = CLEAR_FAULT_BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(CLEAR_FAULT_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : FAULT_LED_Pin */
+  GPIO_InitStruct.Pin = FAULT_LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(FAULT_LED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : FORCE_FAULT_BUTTON_Pin */
+  GPIO_InitStruct.Pin = FORCE_FAULT_BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(FORCE_FAULT_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
@@ -377,44 +417,138 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/*
 void change_button_mode()
 {
-	if(mode_button_flag)
-		  {
-			  mode_button_flag=0;
-			  switch(mode_button_state)
-			  {
-			  case IDLE:
-				  mode_button_state = MANUAL;
-				  state_entry_time = system_tick;
-				  break;
+	if(mode_button_state == FAULT)
+	{
+		return;
+	}
+	else if(mode_button_flag)
+	{
+		mode_button_flag=0;
+		switch(mode_button_state)
+		{
+		case IDLE:
+			mode_button_state = MANUAL;
+			state_entry_time = system_tick;
+			brightness=0;
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
+			break;
 
-			  case MANUAL:
-				  mode_button_state = LOCK;
-				  state_entry_time = system_tick;
-				  break;
+		case MANUAL:
+			mode_button_state = LOCK;
+			state_entry_time = system_tick;
+			break;
 
-			  case LOCK:
-				  mode_button_state = AUTO_RAMP;
-				  state_entry_time = system_tick;
-				  blink_mode = PAUSE;
-				  status_led_last_toggle_time = system_tick;
-				  toggleCounter = 0;
-				  break;
+		case LOCK:
+			mode_button_state = AUTO_RAMP;
+			state_entry_time = system_tick;
+			blink_mode = PAUSE;
+			status_led_last_toggle_time = system_tick;
+			toggleCounter = 0;
+			break;
 
-			  case AUTO_RAMP:
-				  mode_button_state = IDLE;
-				  state_entry_time = system_tick;
-				  break;
+		case AUTO_RAMP:
+			mode_button_state = IDLE;
+			state_entry_time = system_tick;
+			brightness = 0;
+			break;
 
-			  default:
-				  mode_button_state = IDLE;
-				  state_entry_time = system_tick;
-				  break;
-			  }
-		  }
+		default:
+			mode_button_state = IDLE;
+			state_entry_time = system_tick;
+			break;
+		}
+	}
 
+}
+
+void update_fault_led()
+{
+	switch(mode_button_state)
+	{
+    case IDLE:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+    	break;
+
+    case MANUAL:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+    	break;
+
+    case LOCK:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+    	break;
+
+    case AUTO_RAMP:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+       	break;
+
+    case FAULT:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_SET);
+    	break;
+
+    default:
+    	HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+    	break;
+	}
+}
+
+void update_PWM_led()
+{
+	switch(mode_button_state)
+	{
+    case IDLE:
+    	brightness=0;
+    	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
+    	break;
+
+    case MANUAL:
+    	break;
+
+    case LOCK:
+    	break;
+
+    case AUTO_RAMP:
+    	static uint32_t last_ramp_time=0;
+    	static uint8_t ramp_flag=0;
+    	if(system_tick - last_ramp_time >= 10)
+    	{
+    		last_ramp_time = system_tick;
+    		if(ramp_flag==0)
+    		{
+    			brightness++;
+    			if(brightness>=999)
+    			{
+    				ramp_flag=1;
+    				brightness=999;
+    			}
+    		}
+    		else
+    		{
+    			if(brightness>0)
+    			{
+    				brightness--;
+    			}
+    			else
+    			{
+    				brightness=0;
+    				ramp_flag=0;
+    			}
+    		}
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
+    	}
+       	break;
+
+    case FAULT:
+    	brightness=0;
+    	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
+    	break;
+
+    default:
+    	brightness=0;
+    	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
+    	break;
+	}
 }
 
 void update_status_led()
@@ -513,11 +647,31 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if(GPIO_Pin == MODE_STATUS_BUTTON_Pin)
 	{
-		if(system_tick-last_button_press >= 200)
+		if(system_tick - last_button_press >= 200)
 		{
 			mode_button_flag=1;
 			last_button_press=system_tick;
 		}
+	}
+	else if(GPIO_Pin == FORCE_FAULT_BUTTON_Pin)
+	{
+		if(system_tick - last_fault_button_press >= 200)
+		{
+			fault_flag=1;
+			last_fault_button_press = system_tick;
+		}
+	}
+	else if(GPIO_Pin == CLEAR_FAULT_BUTTON_Pin)
+	{
+		if(system_tick - last_clear_button_press >= 200)
+		{
+			if(mode_button_state == FAULT)
+			{
+				clear_fault_flag=1;
+				last_clear_button_press = system_tick;
+			}
+		}
+
 	}
 }
 
@@ -527,7 +681,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	{
 		system_tick++;
 	}
-}*/
+}
 /* USER CODE END 4 */
 
 /**

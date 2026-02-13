@@ -68,12 +68,20 @@ void Error_Handler(void);
 #define USART_RX_GPIO_Port GPIOA
 #define STATUS_LED_Pin GPIO_PIN_5
 #define STATUS_LED_GPIO_Port GPIOA
+#define CLEAR_FAULT_BUTTON_Pin GPIO_PIN_7
+#define CLEAR_FAULT_BUTTON_GPIO_Port GPIOA
+#define CLEAR_FAULT_BUTTON_EXTI_IRQn EXTI9_5_IRQn
+#define FAULT_LED_Pin GPIO_PIN_7
+#define FAULT_LED_GPIO_Port GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define FORCE_FAULT_BUTTON_Pin GPIO_PIN_6
+#define FORCE_FAULT_BUTTON_GPIO_Port GPIOB
+#define FORCE_FAULT_BUTTON_EXTI_IRQn EXTI9_5_IRQn
 
 /* USER CODE BEGIN Private defines */
 
