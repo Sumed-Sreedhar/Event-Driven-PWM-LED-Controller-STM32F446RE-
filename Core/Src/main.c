@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdlib.h>
 
 /* USER CODE END Includes */
 
@@ -31,8 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define STARTUP_DELAY 5000
-
+#define RX_BUFFER_SIZE 64
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -81,6 +82,15 @@ static char key = 0;
 static char last_key = 0;
 static char detected = 0;
 static uint16_t input_value = 0;
+static uint8_t rx_buf[RX_BUFFER_SIZE];
+volatile uint8_t rx_idx=0;
+volatile uint8_t cmd_ready=0;
+static uint8_t rx_byte;
+volatile uint8_t enter_flag=0;
+volatile uint8_t tx_echo_flag = 0;
+volatile uint8_t tx_backspace_flag = 0;
+volatile uint8_t tx_newline_flag = 0;
+static uint8_t tx_char;
 char handle_key(uint16_t row, uint8_t column);
 char keypad_scan(void);
 void process_key(char k);
@@ -92,6 +102,7 @@ void set_row(uint16_t row);
 void set_row_high(void);
 void Toggle_Status_Led(uint8_t led);
 void status_double_blink(void);
+void process_cli_cmd(void);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -142,6 +153,8 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
+  HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  HAL_Delay(1000);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_Base_Start_IT(&htim2);
   state_entry_time = system_tick;
@@ -184,6 +197,30 @@ int main(void)
 			  process_key(key);
 		  }
 		  last_key = detected;
+	  }
+	  if(tx_echo_flag)
+	  {
+	      tx_echo_flag = 0;
+	      HAL_UART_Transmit(&huart2, &tx_char, 1, HAL_MAX_DELAY);
+	  }
+
+	  if(tx_backspace_flag)
+	  {
+	      tx_backspace_flag = 0;
+	      const char bs_seq[] = "\b \b";
+	      HAL_UART_Transmit(&huart2, (uint8_t*)bs_seq, sizeof(bs_seq)-1, HAL_MAX_DELAY);
+	  }
+
+	  if(tx_newline_flag)
+	  {
+	      tx_newline_flag = 0;
+	      const char newline[] = "\r\n";
+	      HAL_UART_Transmit(&huart2, (uint8_t*)newline, sizeof(newline)-1, HAL_MAX_DELAY);
+	  }
+	  if(cmd_ready == 1 && mode_button_state == MANUAL)
+	  {
+		  cmd_ready = 0;
+		  process_cli_cmd();
 	  }
 
 	  update_fault_led();
@@ -513,6 +550,18 @@ void change_button_mode()
 
 }
 
+void process_cli_cmd(void)
+{
+	uint16_t value = atoi((char*)rx_buf);
+
+	if(value <= 999)
+	{
+		brightness = value;
+	}
+	const char msg[] = "Enter LED Brightness (0-999): ";
+	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 char keypad_scan()
 {
 	for(uint16_t row=0; row<4; row++)
@@ -820,6 +869,47 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim->Instance == TIM2)
 	{
 		system_tick++;
+	}
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(huart->Instance == USART2)
+	{
+		if(cmd_ready == 0)
+		{
+			if(rx_byte == '\n' || rx_byte == '\r')
+			{
+				rx_buf[rx_idx] = '\0';
+				cmd_ready = 1;
+				rx_idx = 0;
+				tx_newline_flag = 1;
+			}
+			else if(rx_byte == '\b' || rx_byte == 127)
+			{
+				if(rx_idx > 0)
+				{
+					rx_idx --;
+					rx_buf[rx_idx] = '\0';
+					tx_backspace_flag = 1;
+				}
+			}
+			else
+			{
+				if(rx_idx < RX_BUFFER_SIZE - 1)
+				{
+					rx_buf[rx_idx] = rx_byte;
+					rx_idx++;
+					tx_char = rx_byte;
+					tx_echo_flag = 1;
+				}
+				else
+				{
+					rx_idx = 0;
+				}
+			}
+		}
+		HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
 	}
 }
 /* USER CODE END 4 */

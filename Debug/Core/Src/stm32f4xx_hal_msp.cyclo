@@ -3,4 +3,4 @@
 ../Core/Src/stm32f4xx_hal_msp.c:120:6:HAL_TIM_MspPostInit	2
 ../Core/Src/stm32f4xx_hal_msp.c:152:6:HAL_TIM_Base_MspDeInit	3
 ../Core/Src/stm32f4xx_hal_msp.c:188:6:HAL_UART_MspInit	2
-../Core/Src/stm32f4xx_hal_msp.c:225:6:HAL_UART_MspDeInit	2
+../Core/Src/stm32f4xx_hal_msp.c:228:6:HAL_UART_MspDeInit	2
