@@ -76,6 +76,22 @@ static uint32_t status_led_last_toggle_time=0;
 static uint16_t brightness=0;
 volatile uint8_t fault_flag=0;
 volatile uint8_t clear_fault_flag=0;
+static uint32_t last_keypad_scan=0;
+static char key = 0;
+static char last_key = 0;
+static char detected = 0;
+static uint16_t input_value = 0;
+char handle_key(uint16_t row, uint8_t column);
+char keypad_scan(void);
+void process_key(char k);
+void update_fault_led(void);
+void change_button_mode(void);
+void update_PWM_led(void);
+void update_status_led(void);
+void set_row(uint16_t row);
+void set_row_high(void);
+void Toggle_Status_Led(uint8_t led);
+void status_double_blink(void);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -145,6 +161,7 @@ int main(void)
 		  mode_button_state = IDLE;
 		  state_entry_time = system_tick;
 	  }
+
 	  if(fault_flag)
 	  {
 		  mode_button_state = FAULT;
@@ -154,6 +171,19 @@ int main(void)
 	  {
 		  clear_fault_flag = 0;
 		  mode_button_state = IDLE;
+	  }
+
+	  if(system_tick - last_keypad_scan >= 20)
+	  {
+		  last_keypad_scan = system_tick;
+		  detected = keypad_scan();
+
+		  if(detected !=0 && last_key == 0 && mode_button_state != LOCK)
+		  {
+			  key = detected;
+			  process_key(key);
+		  }
+		  last_key = detected;
 	  }
 
 	  update_fault_led();
@@ -370,7 +400,13 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, ROW_2_keypad_Pin|ROW_3_keypad_Pin|ROW_4_keypad_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(FAULT_LED_GPIO_Port, FAULT_LED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(ROW_1_keypad_GPIO_Port, ROW_1_keypad_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : MODE_STATUS_BUTTON_Pin */
   GPIO_InitStruct.Pin = MODE_STATUS_BUTTON_Pin;
@@ -378,18 +414,31 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(MODE_STATUS_BUTTON_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : STATUS_LED_Pin */
-  GPIO_InitStruct.Pin = STATUS_LED_Pin;
+  /*Configure GPIO pins : COLUMN_1_keypad_Pin COLUMN_2_keypad_Pin COLUMN_3_keypad_Pin */
+  GPIO_InitStruct.Pin = COLUMN_1_keypad_Pin|COLUMN_2_keypad_Pin|COLUMN_3_keypad_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : STATUS_LED_Pin ROW_1_keypad_Pin */
+  GPIO_InitStruct.Pin = STATUS_LED_Pin|ROW_1_keypad_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(STATUS_LED_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : CLEAR_FAULT_BUTTON_Pin */
   GPIO_InitStruct.Pin = CLEAR_FAULT_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(CLEAR_FAULT_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : ROW_2_keypad_Pin ROW_3_keypad_Pin ROW_4_keypad_Pin */
+  GPIO_InitStruct.Pin = ROW_2_keypad_Pin|ROW_3_keypad_Pin|ROW_4_keypad_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : FAULT_LED_Pin */
   GPIO_InitStruct.Pin = FAULT_LED_Pin;
@@ -436,6 +485,7 @@ void change_button_mode()
 			break;
 
 		case MANUAL:
+			input_value = 0;
 			mode_button_state = LOCK;
 			state_entry_time = system_tick;
 			break;
@@ -459,6 +509,94 @@ void change_button_mode()
 			state_entry_time = system_tick;
 			break;
 		}
+	}
+
+}
+
+char keypad_scan()
+{
+	for(uint16_t row=0; row<4; row++)
+	{
+		set_row_high();
+		set_row(row);
+
+		if(HAL_GPIO_ReadPin(COLUMN_1_keypad_GPIO_Port, COLUMN_1_keypad_Pin) == GPIO_PIN_RESET)
+		{
+			return handle_key(row, 1);
+		}
+		else if(HAL_GPIO_ReadPin(COLUMN_2_keypad_GPIO_Port, COLUMN_2_keypad_Pin) == GPIO_PIN_RESET)
+		{
+			return handle_key(row, 2);
+		}
+		else if(HAL_GPIO_ReadPin(COLUMN_3_keypad_GPIO_Port, COLUMN_3_keypad_Pin) == GPIO_PIN_RESET)
+		{
+			return handle_key(row, 3);
+		}
+	}
+	return 0;
+}
+
+void set_row_high()
+{
+	HAL_GPIO_WritePin(ROW_1_keypad_GPIO_Port, ROW_1_keypad_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW_2_keypad_GPIO_Port, ROW_2_keypad_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW_3_keypad_GPIO_Port, ROW_3_keypad_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW_4_keypad_GPIO_Port, ROW_4_keypad_Pin, GPIO_PIN_SET);
+
+}
+
+void set_row(uint16_t row)
+{
+	if(row == 0)
+	{
+		HAL_GPIO_WritePin(ROW_1_keypad_GPIO_Port, ROW_1_keypad_Pin, GPIO_PIN_RESET);
+	}
+	else if(row == 1)
+	{
+		HAL_GPIO_WritePin(ROW_2_keypad_GPIO_Port, ROW_2_keypad_Pin, GPIO_PIN_RESET);
+	}
+	else if(row == 2)
+	{
+		HAL_GPIO_WritePin(ROW_3_keypad_GPIO_Port, ROW_3_keypad_Pin, GPIO_PIN_RESET);
+	}
+	else if(row == 3)
+	{
+		HAL_GPIO_WritePin(ROW_4_keypad_GPIO_Port, ROW_4_keypad_Pin, GPIO_PIN_RESET);
+	}
+}
+
+char handle_key(uint16_t row, uint8_t column)
+{
+	if(row == 0 && column == 1){ return '1';}
+	else if(row == 0 && column == 2){ return '2';}
+	else if(row == 0 && column == 3){ return '3';}
+	else if(row == 1 && column == 1){ return '4';}
+	else if(row == 1 && column == 2){ return '5';}
+	else if(row == 1 && column == 3){ return '6';}
+	else if(row == 2 && column == 1){ return '7';}
+	else if(row == 2 && column == 2){ return '8';}
+	else if(row == 2 && column == 3){ return '9';}
+	else if(row == 3 && column == 1){ return '*';}
+	else if(row == 3 && column == 2){ return '0';}
+	else if(row == 3 && column == 3){ return '#';}
+	return 0;
+}
+
+void process_key(char k)
+{
+	if(k >= '0' && k <= '9')
+	{
+		input_value = (input_value * 10) + (k - '0');
+		if(input_value >= 999){input_value = 999;}
+	}
+	else if(k == '#')
+	{
+		brightness = input_value;
+		input_value = 0;
+	}
+	else if(k == '*')
+	{
+		input_value = 0;
 	}
 
 }
@@ -503,9 +641,11 @@ void update_PWM_led()
     	break;
 
     case MANUAL:
+    	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
     	break;
 
     case LOCK:
+    	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, brightness);
     	break;
 
     case AUTO_RAMP:
